@@ -36,7 +36,9 @@ Path(DOCUMENT_SOURCE_DIR).mkdir(parents=True, exist_ok=True)
 Path(TMP_DIR).mkdir(parents=True, exist_ok=True)
 os.system(f"ollama pull {MODEL} {EMBEDDING_MODEL}")
 
-model = ChatOllama(base_url=OLLAMA_URL, model="mistral", temperature=1,verbose=True,format="json")
+model = ChatOllama(
+    base_url=OLLAMA_URL, model="mistral", temperature=1, verbose=True, format="json"
+)
 
 embedding_function = OllamaEmbeddings(model=EMBEDDING_MODEL)
 
@@ -236,8 +238,8 @@ async def chat_responder_file(message, session_id, model):
     #     # print(resp_stream,end='')
     #     yield resp_stream['result']
 
-    resp = model(histroy)
-    
+    resp = model.invoke(histroy)
+
     result = resp["result"][1:]
     print(result)
 

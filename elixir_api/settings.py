@@ -7,15 +7,15 @@ settings_router = APIRouter()
 DEFAULT_MODEL = "mistral"
 
 
-@settings_router.get("/set_default_model")
-def set_default_model(model_name: str):
-    global DEFAULT_MODEL
-    DEFAULT_MODEL = model_name
+# @settings_router.get("/set_default_model")
+# def set_default_model(model_name: str):
+#     global DEFAULT_MODEL
+#     DEFAULT_MODEL = model_name
 
 
-@settings_router.get("/get_default_model")
-def set_default_model(model_name: str):
-    return {"default_model": MODEL}
+# @settings_router.get("/get_default_model")
+# def set_default_model(model_name: str):
+#     return {"default_model": MODEL}
 
 
 @settings_router.get("/avaliable_models")

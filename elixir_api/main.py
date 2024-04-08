@@ -5,7 +5,6 @@ from .settings import settings_router
 from .chat import chat_router
 
 
-
 cursor.executescript(
     """
     PRAGMA foreign_keys = ON;

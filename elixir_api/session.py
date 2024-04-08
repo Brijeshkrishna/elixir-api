@@ -23,7 +23,7 @@ async def new_session(session_name: str):
         )
         connection.commit()
         return {"status": "ok", "session_id": session_id, "session_name": session_name}
-        
+
     except Exception as e:
         return {"status": "bad", "message": "session alread exists"}
 
@@ -42,15 +42,13 @@ async def list_sessions():
 
 
 @session_router.get("/delete_session_by_id")
-async def delete_session_by_id(session_id: Union[uuid.UUID,str] ):
+async def delete_session_by_id(session_id: Union[uuid.UUID, str]):
     try:
         session_id = await return_id(session_id)
         if session_id == None:
-            return {"error":"no uuid found"}
+            return {"error": "no uuid found"}
         print(session_id)
-        cursor.execute(
-            "DELETE FROM user_session where uuid = ?", (session_id,)
-        )
+        cursor.execute("DELETE FROM user_session where uuid = ?", (session_id,))
         connection.commit()
     except:
         pass
@@ -73,6 +71,7 @@ async def is_valid_session_id(session_id):
     if res is None or res == [] or res == ():
         return False
     return True
+
 
 async def return_id(session_id_or_name):
     if await is_valid_session_id(session_id_or_name) == False:
