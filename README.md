@@ -11,6 +11,6 @@
 
 ## how to run 
 
- - `chmod +x run.sh`
- - `./run.sh`
+ - `sh run_server.sh`
+ - `sh run_elixir.sh`
 
