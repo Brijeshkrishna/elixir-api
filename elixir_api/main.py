@@ -17,7 +17,7 @@ cursor.executescript(
 connection.commit()
 
 
-app = FastAPI()
+app = FastAPI(redoc_url="/redoc")
 
 app.include_router(info_router)
 app.include_router(session_router)

@@ -20,13 +20,13 @@ from langchain.embeddings.ollama import OllamaEmbeddings
 from langchain_core.messages import HumanMessage, AIMessage
 
 
-QDRANT_URL = "http://localhost:6333"
+QDRANT_URL = ":memory:"
 OLLAMA_URL = "http://localhost:11434"
 
 MODEL = "mistral"
 EMBEDDING_MODEL = "nomic-embed-text"
 
-QRANT_CLIENT = qdrant_client.QdrantClient(url=QDRANT_URL)
+QRANT_CLIENT = qdrant_client.QdrantClient(location=QDRANT_URL)
 
 DOCUMENT_SOURCE_DIR = "documents/"
 TMP_DIR = "tmp/"
@@ -159,7 +159,7 @@ async def load_file(pdf_file_name):
     # print(db)
     # db.add_documents(document)
     Qdrant.from_documents(
-        url=QDRANT_URL,
+        location=QDRANT_URL,
         documents=document,
         embedding=embedding_function,
         collection_name=collection_name,
