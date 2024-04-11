@@ -1,5 +1,5 @@
 from pathlib import Path
-import os
+import subprocess
 from fastapi import APIRouter, File, UploadFile
 from fastapi.responses import StreamingResponse
 from .session import get_session_id, is_valid_session_id, cursor, connection, return_id
@@ -9,6 +9,8 @@ import json
 from pydantic import BaseModel
 import hashlib
 import qdrant_client
+from typing import Union, Literal
+import re
 
 from langchain_community.llms import Ollama
 from langchain_community.chat_models import ChatOllama
@@ -18,9 +20,13 @@ from langchain_community.vectorstores import Qdrant
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain.embeddings.ollama import OllamaEmbeddings
 from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from .history import get_history
+from deep_translator import GoogleTranslator
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 
-
-QDRANT_URL = ":memory:"
+QDRANT_URL = "http://localhost:6333"  # ":memory:"
 OLLAMA_URL = "http://localhost:11434"
 
 MODEL = "mistral"
@@ -31,54 +37,36 @@ QRANT_CLIENT = qdrant_client.QdrantClient(location=QDRANT_URL)
 DOCUMENT_SOURCE_DIR = "documents/"
 TMP_DIR = "tmp/"
 
+CHUNK_SIZE = 500
+CHUNK_OVERLAP = 50
 
 Path(DOCUMENT_SOURCE_DIR).mkdir(parents=True, exist_ok=True)
 Path(TMP_DIR).mkdir(parents=True, exist_ok=True)
-os.system(f"ollama pull {MODEL} {EMBEDDING_MODEL}")
+subprocess.call(["ollama", "pull", MODEL, EMBEDDING_MODEL])
 
-model = ChatOllama(
-    base_url=OLLAMA_URL, model="mistral", temperature=1, verbose=True, format="json"
+CHATMODEL = ChatOllama(
+    base_url=OLLAMA_URL, model="mistral", temperature=0, verbose=True
 )
 
 embedding_function = OllamaEmbeddings(model=EMBEDDING_MODEL)
-
-# embedding_function = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-
-
-class Chat(BaseModel):
-    message: str
-    session_id_or_name: str
 
 
 chat_router = APIRouter()
 
 
-@chat_router.get("/get_chat_history")
-async def get_chat_history_of(session_id_or_name: str):
-
-    session_id_or_name = await return_id(session_id_or_name)
-    if session_id_or_name == None:
-        return {"status": "bad", "message": "session not exits"}
-    return await get_history(session_id_or_name)
-
-
-async def get_history(session_id: str):
-    res = cursor.execute(
-        "SELECT ch.role, ch.chat FROM user_session us JOIN chat_history ch ON  ch.uuid = ? AND ch.uuid = us.uuid order by ch.created_at",
-        (session_id,),
-    )
-    res = res.fetchall()
-
-    return {"history": [{"role": i[0], "message": i[1]} for i in res]}
-
-
-async def chat_responder(message, session_id, model):
-
+def inserted_db(
+    session_id: uuid.UUID, role: Literal["user", "assistant"], message: str
+):
     cursor.execute(
         "INSERT INTO chat_history(uuid,role,chat) VALUES(?,?,?)",
-        (session_id, "user", message),
+        (session_id, role, message),
     )
-    connection.commit()
+
+
+async def chat_responder(message, session_id):
+
+    message = text_process(message=message)
+    inserted_db(session_id=session_id, role="user", message=message)
 
     histroy = []
     for msg in (await get_history(session_id))["history"]:
@@ -86,30 +74,24 @@ async def chat_responder(message, session_id, model):
             histroy.append(HumanMessage(content=msg["message"]))
         else:
             histroy.append(AIMessage(content=msg["message"]))
-    print(histroy)
 
     gen_message = ""
-    for resp_stream in model.stream(histroy):
-        print(resp_stream)
+    async for resp_stream in CHATMODEL.astream(histroy):
         gen_message = gen_message + resp_stream.content
         yield resp_stream.content
 
-    cursor.execute(
-        "INSERT INTO chat_history(uuid,role,chat) VALUES(?,?,?)",
-        (session_id, "assistant", gen_message),
-    )
+    inserted_db(session_id=session_id, role="assistant", message=gen_message)
     connection.commit()
 
 
-@chat_router.post("/chat")
-async def read_item(item: Chat):
-    session_id_or_name = await return_id(item.session_id_or_name)
+@chat_router.get("/chat")
+async def chat(session_id_or_name: Union[str, uuid.UUID], message: str):
+    session_id_or_name = await return_id(session_id_or_name)
     if session_id_or_name == None:
         return {"status": "bad", "message": "session not exits"}
 
     return StreamingResponse(
-        chat_responder(item.message, session_id_or_name, model),
-        media_type="text/event-stream",
+        chat_responder(message, session_id_or_name), media_type="text/event-stream"
     )
 
 
@@ -149,15 +131,19 @@ async def load_file(pdf_file_name):
     if check_collection_exists(collection_name):
         return collection_name
 
-    document = PyPDFLoader(pdf_file_name, extract_images=False).load_and_split()
+    document = PyPDFLoader(pdf_file_name, extract_images=False).load()
 
-    # db = Qdrant(
-    #     client=QRANT_CLIENT,
-    #     collection_name=collection_name,
-    #     embeddings=embedding_function,
-    # )
-    # print(db)
-    # db.add_documents(document)
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP
+    )
+    texts = text_splitter.split_documents(document)
+
+    for idx, val in enumerate(texts):
+        val = re.sub(r"\\u[0-9a-b]{0,4}", " ", val.page_content)
+        texts[idx].page_content = GoogleTranslator(
+            source="auto", target="en"
+        ).translate(val.strip())
+
     Qdrant.from_documents(
         location=QDRANT_URL,
         documents=document,
@@ -186,6 +172,34 @@ async def read_item(session_id_or_name):
     ).fetchall()
 
     return collection_list
+
+
+@chat_router.get("/delete_file")
+async def delete_file(session_id_or_name, file_id):
+    session_id_or_name = await return_id(session_id_or_name)
+    if await return_id(session_id_or_name) == None:
+        return {"status": "bad", "message": "session not exits"}
+
+    cursor.execute(
+        "DELETE FROM file_records WHERE uuid = ? AND file_id = ?",
+        (session_id_or_name, file_id),
+    )
+    connection.commit()
+    return {"status": "Done"}
+
+
+@chat_router.get("/delete_all_file")
+async def delete_file(session_id_or_name):
+    session_id_or_name = await return_id(session_id_or_name)
+    if await return_id(session_id_or_name) == None:
+        return {"status": "bad", "message": "session not exits"}
+
+    cursor.execute(
+        "DELETE FROM file_records WHERE uuid = ?",
+        (session_id_or_name, file_id),
+    )
+    connection.commit()
+    return {"status": "Done"}
 
 
 @chat_router.get("/file_search")
@@ -217,7 +231,6 @@ def get_vector_store(collection_name):
 
 
 async def chat_responder_file(message, session_id, model):
-    print(000)
     cursor.execute(
         "INSERT INTO chat_history(uuid,role,chat) VALUES(?,?,?)",
         (session_id, "user", message),
@@ -230,18 +243,10 @@ async def chat_responder_file(message, session_id, model):
             histroy.append(HumanMessage(content=msg["message"]))
         else:
             histroy.append(AIMessage(content=msg["message"]))
-    print(histroy)
-
-    # gen_message = ""
-    # for resp_stream in model.stream(message):
-    #     gen_message = gen_message + resp_stream['result']
-    #     # print(resp_stream,end='')
-    #     yield resp_stream['result']
 
     resp = model.invoke(histroy)
 
-    result = resp["result"][1:]
-    print(result)
+    result = resp["result"]
 
     source = {}
     for i in resp["source_documents"]:
@@ -256,40 +261,44 @@ async def chat_responder_file(message, session_id, model):
         (session_id, "assistant", result),
     )
     connection.commit()
+    print(result)
     return result
 
 
 @chat_router.get("/chat_with_file")
-async def file_search(session_id_or_name: str, message: str):
+async def file_search(session_id_or_name: str, message: str, file_id: str):
     session_id_or_name = await return_id(session_id_or_name)
     if session_id_or_name == None:
         return {"status": "bad", "message": "session not exits"}
 
     collection_list = cursor.execute(
-        "SELECT file_id FROM file_records fr JOIN user_session us ON fr.uuid = us.uuid"
+        "SELECT file_id FROM file_records fr JOIN user_session us ON fr.uuid = us.uuid AND fr.file_id = ?",
+        (file_id,),
     ).fetchall()
 
     if collection_list is None or collection_list == [] or collection_list == ():
+        return {"status": "error", "msg": "file_id not found"}
+        # return await chat_responder_file(
+        #     message=message, session_id=session_id_or_name, model=CHATMODEL
+        # )
 
-        return await chat_responder_file(
-            message=message, session_id=session_id_or_name, model=model
-        )
-
-    collection_list = [i[0] for i in collection_list]
+    # collection_list = [i[0] for i in collection_list]
 
     qd = Qdrant(
         client=QRANT_CLIENT,
         embeddings=embedding_function,
-        collection_name=get_relavent_collection(message, collection_list),
+        collection_name=file_id,
     )
 
     r = RetrievalQA.from_chain_type(
-        llm=model,
+        llm=CHATMODEL,
         chain_type="stuff",
         retriever=qd.as_retriever(),
         return_source_documents=True,
     )
 
-    return await chat_responder_file(
-        message=message, session_id=session_id_or_name, model=r
-    )
+    return await chat_responder_file(message, session_id_or_name, r)
+
+
+def text_process(message: str) -> str:
+    return GoogleTranslator(source="auto", target="en").translate(message.strip())

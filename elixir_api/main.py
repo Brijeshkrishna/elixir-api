@@ -3,6 +3,7 @@ from .info import info_router
 from .session import session_router, cursor, connection
 from .settings import settings_router
 from .chat import chat_router
+from .history import history_router
 
 
 cursor.executescript(
@@ -23,3 +24,4 @@ app.include_router(info_router)
 app.include_router(session_router)
 app.include_router(settings_router)
 app.include_router(chat_router)
+app.include_router(history_router)

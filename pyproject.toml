@@ -16,6 +16,10 @@ langchain-community = "^0.0.31"
 langchain = "^0.1.14"
 sentence-transformers = "^2.6.1"
 python-multipart = "^0.0.9"
+gradio-pdf = "^0.0.7"
+gradio = "^4.26.0"
+pdf2image = "^1.17.0"
+deep-translator = "^1.11.4"
 
 
 [build-system]
