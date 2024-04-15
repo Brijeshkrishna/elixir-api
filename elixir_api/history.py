@@ -23,7 +23,7 @@ async def get_chat_history(session_id_or_name: Union[str, uuid.UUID]):
         return {"status": "bad", "message": "session not exits"}
 
     cursor.execute(
-        "DELETE FROM chat_history ch WHERE ch.uuid= ?", (session_id_or_name,)
+        "DELETE FROM chat_history WHERE uuid= ?", (session_id_or_name,)
     )
     connection.commit()
 
@@ -36,4 +36,4 @@ async def get_history(session_id: str):
         (session_id,),
     )
     res = res.fetchall()
-    return {"history": [{"role": i[0], "message": i[1]} for i in res]}
+    return [{"role": i[0], "message": i[1]} for i in res]
