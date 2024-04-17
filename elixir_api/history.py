@@ -1,10 +1,13 @@
 from fastapi import APIRouter, File, UploadFile
 from typing import Union
-from .session import cursor, return_id, connection
+from .session import return_id
 import uuid
+from .init import __connection__
+
 
 history_router = APIRouter()
 
+cursor = __connection__.cursor()
 
 @history_router.get("/get_chat_history")
 async def get_chat_history(session_id_or_name: Union[str, uuid.UUID]):
@@ -16,7 +19,7 @@ async def get_chat_history(session_id_or_name: Union[str, uuid.UUID]):
 
 
 @history_router.get("/clear_chat_history")
-async def get_chat_history(session_id_or_name: Union[str, uuid.UUID]):
+async def clear_chat_history(session_id_or_name: Union[str, uuid.UUID]):
 
     session_id_or_name = await return_id(session_id_or_name)
     if session_id_or_name == None:
@@ -25,7 +28,7 @@ async def get_chat_history(session_id_or_name: Union[str, uuid.UUID]):
     cursor.execute(
         "DELETE FROM chat_history WHERE uuid= ?", (session_id_or_name,)
     )
-    connection.commit()
+    __connection__.commit()
 
     return {"status": "good", "message": "history cleared"}
 
