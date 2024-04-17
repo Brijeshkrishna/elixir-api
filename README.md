@@ -8,9 +8,10 @@
 - poetry
 - qdrant
 
+## install the pacakge requirements
+- `sh install.sh`
 
 ## how to run 
-
- - run qdrant 
+ 
  - `sh run_elixir.sh`
 
