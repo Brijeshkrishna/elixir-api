@@ -15,7 +15,7 @@ import qdrant_client
 
 from .session import return_id
 from .init import __embedding_function__, __qdrant_clinet__, __connection__
-from .helper import FileUploadBase, get_collection, get_hash,text_process,commit
+from .helper import FileUploadBase, get_collection, get_hash,text_process,commit,check_collection_exists
 
 
 __CONFIG__ = configparser.ConfigParser()
@@ -66,7 +66,7 @@ async def load_file(pdf_file_name):
     if file_ext == "pdf":
         texts = PyPDFLoader(pdf_file_name, extract_images=False).load_and_split()
     else:
-        texts = TextLoader(pdf_file_name, extract_images=False).load_and_split()
+        texts = TextLoader(pdf_file_name).load_and_split()
         
         # text_splitter = RecursiveCharacterTextSplitter(
         #     chunk_size=int(__CONFIG__.get("FILE_CONFIG", "CHUNK_SIZE")),

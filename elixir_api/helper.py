@@ -55,9 +55,12 @@ def run_in_thread(f):
 
     return wrapper
 
-
+@run_in_thread
 def parse_images_from_pdf(file_id: str):
     src = get_file_name(file_id)
+
+    if src.split(".")[-1] == "txt":
+        return
     reader = PdfReader(src)
     for page_no, page in enumerate(reader.pages):
 

@@ -1,55 +1,62 @@
-import os
-import re
-import json
-import uuid
-import hashlib
-import threading
 from pathlib import Path
 import subprocess
-from typing import Union, Literal
-from pdf2image import convert_from_path
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-
-import requests
 from fastapi import APIRouter, File, UploadFile
-from fastapi.responses import StreamingResponse, FileResponse, ORJSONResponse
+from fastapi.responses import StreamingResponse
+from fastapi.responses import ORJSONResponse
+from .session import get_session_id, is_valid_session_id, return_id
+import uuid
+import requests
+import json
+from pydantic import BaseModel
+import hashlib
+import qdrant_client
+from pypdf import PdfReader
+from typing import Union, Literal
+import re
+from fastapi.responses import FileResponse
+from .helper import text_process
+from pdf2image import convert_from_path
+import pdfreader
+import os
+import threading
 
+# from .file_handel import get_imge_ids
 from langchain_core.prompts.chat import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.messages import HumanMessage, AIMessage
-from langchain_core.output_parsers import StrOutputParser
-from langchain.chains import RetrievalQA, create_retrieval_chain
-from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_community.llms import Ollama
 from langchain_community.chat_models import ChatOllama
+from langchain.chains import RetrievalQA
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.vectorstores import Qdrant
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain.embeddings.ollama import OllamaEmbeddings
-from langchain_community.history import get_history
-from langchain_community.helper import (
+from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from .history import get_history
+from .file_handel import get_hash
+from langchain.chains import create_retrieval_chain
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
+from .helper import (
     text_process,
     inserted_db,
     collect_history,
     get_vector_store,
     get_image_id,
-    get_hash,
     commit,
     terminal,
     parse_images_from_pdf,
 )
-from langchain_community.init import (
+from .init import (
     __connection__,
     __chat_retrival_model__,
     __embedding_function__,
     __qdrant_clinet__,
     log,
 )
-
-from pypdf import PdfReader
-import pdfreader
-import qdrant_client
-
+import configparser
 
 __CONFIG__ = configparser.ConfigParser()
 __CONFIG__.read("elixir.ini")
@@ -115,27 +122,34 @@ def elixir_header_message(content):
     captured_images = []
     source_doc = {}
     log.info(f"retrived content {content}")
-    for j in content.get("context"):
 
-        if j.metadata["source"] in source_doc:
-            source_doc[j.metadata["source"]].add(j.metadata["page"])
-        else:
-            source_doc[j.metadata["source"]] = set([j.metadata["page"]])
+    try:
 
-        imgs = get_image_id(int(j.metadata["page"]), j.metadata["source"])
-        captured_images.extend(imgs)
+        for j in content.get("context"):
 
-    return {
-        "source": {key: list(value) for key, value in source_doc.items()},
-        "images": list(set(captured_images)),
-    }
+            if j.metadata["source"] in source_doc:
+                source_doc[j.metadata["source"]].add(j.metadata["page"])
+            else:
+                source_doc[j.metadata["source"]] = set([j.metadata["page"]])
+
+            imgs = get_image_id(int(j.metadata["page"]), j.metadata["source"])
+            captured_images.extend(imgs)
+        return {
+            "source": {key: list(value) for key, value in source_doc.items()},
+            "images": list(set(captured_images)),
+        }
+    except:
+        return {
+            "source": {str(content.get("context").metadata["source"]): []},
+            "images": [],
+        }
 
 
 async def chat_responder_file(message, session_id, model):
 
     message = text_process(message=message)
     history = await collect_history(message=message, session_id=session_id)
-
+    inserted_db(session_id=session_id, role="user", message=message)
     log.info(f"Message after processed {message}")
     log.info(f"History collected len is {len(history)}")
 
